@@ -963,12 +963,12 @@ EXPORT DataPull := MODULE
                             + COUNT(copyFiles)
                             + COUNT(addLocalSuperFileRelations);
 
-        allActions := SEQUENTIAL
+        allActions := ORDERED
             (
                 OUTPUT(isDryRun, NAMED('WasDryRun'));
                 IF  (
                         debugOutput,
-                        SEQUENTIAL
+                        ORDERED
                             (
                                 OUTPUT(info.remoteFiles, NAMED('DEBUG_remoteFiles'));
                                 OUTPUT(info.remoteSuperFileRelationships, NAMED('DEBUG_remoteSuperFileRelationships'));

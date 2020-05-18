@@ -31,6 +31,14 @@ file. With the Windows IDE, the DataPull directory must not be a top-level item
 in your repository list; it needs to be installed one level below the top level,
 such as within your "My Files" folder.
 
+<a name="release_notes"></a>
+### Release Notes
+
+|Version|Notes|
+|:----:|:-----|
+|1.0.0|Initial public release|
+|1.0.1|Change SEQUENTIAL calls to ORDERED for performance (avoids subgraph duplication)|
+
 ## Overview
 
 This is strictly a "pull" copy scheme where the intention is to make the
