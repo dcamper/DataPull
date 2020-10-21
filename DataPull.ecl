@@ -204,13 +204,16 @@ EXPORT DataPull := MODULE
      * Gather information on files and superfiles that match the given set of
      * filename patterns.
      *
-     * @param   dali        The IP address of the Dali to check for files
-     * @param   patterns    A set of filename patterns to match
+     * @param   dali                    The IP address of the Dali to check
+     *                                  for files
+     * @param   patterns                A set of filename patterns to match
+     * @param   disableContentCheck     If TRUE do no collect format or
+     *                                  content CRC values
      *
      * @return  A DATASET(FileInfoRec) containing the information.  Note that
      *          both files and superfiles are gathered.
      */
-    SHARED GetInfoForFilesMatchingPatterns(STRING dali, SET OF STRING patterns) := FUNCTION
+    SHARED GetInfoForFilesMatchingPatterns(STRING dali, SET OF STRING patterns, BOOLEAN disableContentCheck) := FUNCTION
         // Gather files that match each given pattern; matched files will be
         // in a child recordset
         embeddedResults := PROJECT
@@ -245,8 +248,8 @@ EXPORT DataPull := MODULE
                     (
                         FileInfoRec,
                         SELF.level := 1,
-                        SELF.fileCRC := IF(~RIGHT.superfile, Std.File.GetLogicalFileAttribute(EnsureForeignPath(RIGHT.name, dali), 'fileCrc'), ''),
-                        SELF.formatCRC := IF(~RIGHT.superfile, Std.File.GetLogicalFileAttribute(EnsureForeignPath(RIGHT.name, dali), 'formatCrc'), ''),
+                        SELF.fileCRC := IF(~RIGHT.superfile AND ~disableContentCheck, Std.File.GetLogicalFileAttribute(EnsureForeignPath(RIGHT.name, dali), 'fileCrc'), ''),
+                        SELF.formatCRC := IF(~RIGHT.superfile AND ~disableContentCheck, Std.File.GetLogicalFileAttribute(EnsureForeignPath(RIGHT.name, dali), 'formatCrc'), ''),
                         SELF := RIGHT
                     )
             );
@@ -261,16 +264,20 @@ EXPORT DataPull := MODULE
      * Gather information on all subfiles referenced by superfiles.  This is a
      * recursive function and will drill down as far as it needs to go.
      *
-     * @param   fileInfoList    A dataset containing previously-derived file
-     *                          info, as from GetInfoForFilesMatchingPatterns()
-     * @param   dali        The IP address of the Dali to check for files
+     * @param   fileInfoList            A dataset containing previously-derived
+     *                                  file info, as from
+     *                                  GetInfoForFilesMatchingPatterns()
+     * @param   dali                    The IP address of the Dali to check
+     *                                  for files
+     * @param   disableContentCheck     If TRUE do no collect format or
+     *                                  content CRC values
      *
      * @return  A DATASET(FileInfoRec) containing the information.  Note that
      *          both files and superfiles are gathered.
      *
      * @see     GetInfoForFilesMatchingPatterns
      */
-    SHARED GetAllSubFiles(DATASET(FileInfoRec) fileInfoList, STRING dali) := FUNCTION
+    SHARED GetAllSubFiles(DATASET(FileInfoRec) fileInfoList, STRING dali, BOOLEAN disableContentCheck) := FUNCTION
         // Loop that gathers information on the immediate children of superfiles;
         // note that the ds argument will contain only superfiles
         GetImmediateChildren(DATASET(SuperfileRelationshipRec) ds, UNSIGNED2 c) := FUNCTION
@@ -331,7 +338,7 @@ EXPORT DataPull := MODULE
                     TRANSFORM
                         (
                             SubFileInfoRec,
-                            SELF.subFileInfo := GetInfoForFilesMatchingPatterns(dali, [LEFT.name]),
+                            SELF.subFileInfo := GetInfoForFilesMatchingPatterns(dali, [LEFT.name], disableContentCheck),
                             SELF := LEFT
                         )
                 );
@@ -391,17 +398,20 @@ EXPORT DataPull := MODULE
      * gathered subfiles may not necessarily match any of the given filename
      * patterns.
      *
-     * @param   dali        The IP address of the Dali to check for files
-     * @param   patterns    A set of filename patterns to match
+     * @param   dali                    The IP address of the Dali to check
+     *                                  for files
+     * @param   patterns                A set of filename patterns to match
+     * @param   disableContentCheck     If TRUE do no collect format or
+     *                                  content CRC values
      *
      * @return  A MODULE containing file and superfile information
      *          within a DATASET(FileInfoRec) dataset, as well as
      *          superfile/subfile relationship data in a
      *          DATASET(SuperfileRelationshipRec) dataset.
      */
-    SHARED CollectFileInfoFromSystem(STRING dali, SET OF STRING patterns) := FUNCTION
-        initialPatternResult := GetInfoForFilesMatchingPatterns(dali, patterns);
-        superSubResult := GetAllSubFiles(initialPatternResult, dali) : INDEPENDENT;
+    SHARED CollectFileInfoFromSystem(STRING dali, SET OF STRING patterns, BOOLEAN disableContentCheck) := FUNCTION
+        initialPatternResult := GetInfoForFilesMatchingPatterns(dali, patterns, disableContentCheck);
+        superSubResult := GetAllSubFiles(initialPatternResult, dali, disableContentCheck) : INDEPENDENT;
 
         // We need to add file information for files found while gathering
         // subfiles but were not included in the initial pattern match
@@ -418,7 +428,7 @@ EXPORT DataPull := MODULE
                 LEFT ONLY
             );
         unreportedNameSet := NOTHOR(SET(unreportedSubFileNames, subFilePath));
-        unreportedSubFileInfo := GetInfoForFilesMatchingPatterns(dali, unreportedNameSet);
+        unreportedSubFileInfo := GetInfoForFilesMatchingPatterns(dali, unreportedNameSet, disableContentCheck);
 
         // Concatenate the additional files with the initial pattern result
         allFileInfo := initialPatternResult + unreportedSubFileInfo : INDEPENDENT;
@@ -683,9 +693,20 @@ EXPORT DataPull := MODULE
      * determine what changes are needed to make the local system mirror the
      * remote system, and provide summarized results of those changes.
      *
-     * @param   dali        The IP address of the remote Dali to check
-     * @param   patterns    A set of filename patterns to match; OPTIONAL,
-     *                      defaults to ['*'] which indicates all files
+     * @param   dali                The IP address of the remote Dali to check
+     * @param   patterns            A set of filename patterns to match;
+     *                              OPTIONAL, defaults to ['*'] which indicates
+     *                              all files
+     * @param   disableContentCheck If TRUE, don't use a file's format or
+     *                              content CRC values to help determine
+     *                              if a file that already exists at the
+     *                              destination has been modified (the
+     *                              assumption will be that the file has NOT
+     *                              been modified); disabling this check can
+     *                              speed up the scanning operation, but source
+     *                              files that have been overwritten with new
+     *                              contents may not be copied; OPTIONAL,
+     *                              defaults to FALSE
      *
      * @return  MODULE containing multiple attributes:
      *              engine                          The HPCC engine that is
@@ -716,9 +737,9 @@ EXPORT DataPull := MODULE
      *
      * @see     Go
      */
-    EXPORT CollectFileInfo(STRING dali, SET OF STRING patterns = DEFAULT_FILENAME_PATTERNS) := FUNCTION
-        remoteResults := CollectFileInfoFromSystem(dali, patterns);
-        localResults := CollectFileInfoFromSystem(Std.System.Thorlib.DaliServer(), patterns);
+    EXPORT CollectFileInfo(STRING dali, SET OF STRING patterns = DEFAULT_FILENAME_PATTERNS, BOOLEAN disableContentCheck = FALSE) := FUNCTION
+        remoteResults := CollectFileInfoFromSystem(dali, patterns, disableContentCheck);
+        localResults := CollectFileInfoFromSystem(Std.System.Thorlib.DaliServer(), patterns, disableContentCheck);
         fileActionResults := GenerateFileActions(remoteResults.files, localResults.files);
         fileActionSummaryStats := TABLE
             (
@@ -814,6 +835,16 @@ EXPORT DataPull := MODULE
      *                              file will be compressed only if the source
      *                              file is compressed; OPTIONAL, defaults
      *                              to FALSE
+     * @param   disableContentCheck If TRUE, don't use a file's format or
+     *                              content CRC values to help determine
+     *                              if a file that already exists at the
+     *                              destination has been modified (the
+     *                              assumption will be that the file has NOT
+     *                              been modified); disabling this check can
+     *                              speed up the scanning operation, but source
+     *                              files that have been overwritten with new
+     *                              contents may not be copied; OPTIONAL,
+     *                              defaults to FALSE
      * @param   isDryRun            If TRUE, only information about the analysis
      *                              and commands that would be executed are
      *                              shown as results; if FALSE then the
@@ -832,6 +863,7 @@ EXPORT DataPull := MODULE
               SET OF STRING patterns = DEFAULT_FILENAME_PATTERNS,
               DATASET(ClusterMapRec) clusterMap = DATASET([], ClusterMapRec),
               BOOLEAN forceCompression = FALSE,
+              BOOLEAN disableContentCheck = FALSE,
               BOOLEAN isDryRun = TRUE,
               BOOLEAN debugOutput = FALSE) := FUNCTION
 
@@ -848,7 +880,7 @@ EXPORT DataPull := MODULE
         actionCountLabel := IF(isDryRun, 'DryRun', '') + 'ActionCount';
         actionLabel := IF(isDryRun, 'DryRun', '') + 'Actions';
 
-        info := CollectFileInfo(dali, patterns);
+        info := CollectFileInfo(dali, patterns, disableContentCheck);
 
         // Remove local superfile relations
         removeLocalSuperFileRelations := GLOBAL(info.superFileActions(syncAction = SYNC_ACTION.DELETE_FILE), FEW);
