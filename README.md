@@ -29,15 +29,21 @@ Note that is possible to use this code without installing it as a bundle.  To do
 so, simply make it available within your IDE and just ignore the Bundle.ecl
 file. With the Windows IDE, the DataPull directory must not be a top-level item
 in your repository list; it needs to be installed one level below the top level,
-such as within your "My Files" folder.
+such as within your "My Files" folder.  If you use this technique then your ECL
+IMPORT statement will change slightly as well:  instead of
+`IMPORT DataPull;` you will have to use `IMPORT DataPull.DataPull;`.
 
 <a name="release_notes"></a>
 ### Release Notes
+<details>
+<summary>Click to expand</summary>
 
 |Version|Notes|
 |:----:|:-----|
 |1.0.0|Initial public release|
 |1.0.1|Change SEQUENTIAL calls to ORDERED for performance (avoids subgraph duplication)|
+|1.1.0|Add disableContentCheck option|
+</details>
 
 ## Overview
 
@@ -60,7 +66,11 @@ relationships so they match the remote system.
 
 Regular files are copied only if necessary.  If a file already exists in both
 the systems, it is examined for change (size, content or metadata) and
-copied only if a difference is found.
+copied only if a difference is found.  Checking the content takes extra work
+and, if the number of files to be examined is large, may be time-consuming.
+If you are confident that files are not overwritten in the remote system
+(meaning, a file with a given name will never change its contents) then you
+can disable the content check with a `disableContentCheck` parameter.
 
 Optional cluster name mapping is supported.  This covers the case where a
 remote file may exist on a cluster with a name that doesn't exist on the
@@ -77,6 +87,8 @@ opportunity to see what the code would do if only given the chance.
 **This code must be executed on the hthor HPCC engine.**  If you try to execute
 it on a different engine then it will fail with an informative error.
 
+Further information can be found within the [DataPull.ecl](DataPull.ecl) file.
+
 ## Known Limitation
 
 This code will not correctly process Roxie indexes that are in use on the local
@@ -85,24 +97,29 @@ new data coming in from the remote system.
 
 ## Example code
 
-	// Mirror all of my files and any file or superfile with 'search' in the name
-	FILE_PATTERNS := ['dcamper::*', '*search*'];
-	REMOTE_DALI := '10.173.147.1';
+```
+IMPORT DataPull;
 
-	// Make sure that any remote files existing on the 'hthor__myeclagent'
-	// cluster are copied to the local 'hthor' cluster
-	clusters := DATASET
-		(
-			[
-				{'hthor__myeclagent', 'hthor'}
-			],
-			DataPull.ClusterMapRec
-		);
+// Mirror all of my files and any file or superfile with 'search' in the name
+FILE_PATTERNS := ['dcamper::*', '*search*'];
+REMOTE_DALI := '10.173.147.1';
 
-	DataPull.Go
-		(
-			REMOTE_DALI,
-			FILE_PATTERNS,
-			clusterMap := clusters,
-			isDryRun := TRUE
-		);
+// Make sure that any remote files existing on the 'hthor__myeclagent'
+// cluster are copied to the local 'hthor' cluster
+clusters := DATASET
+	(
+		[
+			{'hthor__myeclagent', 'hthor'}
+		],
+		DataPull.ClusterMapRec
+	);
+
+DataPull.Go
+	(
+		REMOTE_DALI,
+		FILE_PATTERNS,
+		clusterMap := clusters,
+		disableContentCheck := FALSE,
+		isDryRun := TRUE
+	);
+```
