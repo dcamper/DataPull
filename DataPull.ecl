@@ -845,6 +845,10 @@ EXPORT DataPull := MODULE
      *                              files that have been overwritten with new
      *                              contents may not be copied; OPTIONAL,
      *                              defaults to FALSE
+     * @param   enableNoSplit       If TRUE, files are copied to a single
+     *                              destination node rather than spread across
+     *                              all nodes of the cluster; OPTIONAL, defaults
+     *                              to FALSE
      * @param   isDryRun            If TRUE, only information about the analysis
      *                              and commands that would be executed are
      *                              shown as results; if FALSE then the
@@ -864,6 +868,7 @@ EXPORT DataPull := MODULE
               DATASET(ClusterMapRec) clusterMap = DATASET([], ClusterMapRec),
               BOOLEAN forceCompression = FALSE,
               BOOLEAN disableContentCheck = FALSE,
+              BOOLEAN enableNoSplit = FALSE,
               BOOLEAN isDryRun = TRUE,
               BOOLEAN debugOutput = FALSE) := FUNCTION
 
@@ -958,7 +963,7 @@ EXPORT DataPull := MODULE
                 TRANSFORM
                     (
                         ActionDescRec,
-                        SELF.cmd := 'Std.File.Copy(' + QuotedAbsPath(LEFT.path) + ', ' + Quoted(MappedCluster(LEFT.sourceCluster)) + ', ' + QuotedAbsPath(LEFT.path) + ', ' + Quoted(dali) + ', allowoverwrite := TRUE' + IF(forceCompression, ', compress := TRUE', '') + ');'
+                        SELF.cmd := 'Std.File.Copy(' + QuotedAbsPath(LEFT.path) + ', ' + Quoted(MappedCluster(LEFT.sourceCluster)) + ', ' + QuotedAbsPath(LEFT.path) + ', ' + Quoted(dali) + ', allowoverwrite := TRUE' + IF(forceCompression, ', compress := TRUE', '') + IF(enableNoSplit, ', noSplit := TRUE', '') + ');'
                     )
             );
         copyFilesAction := PARALLEL
@@ -966,8 +971,8 @@ EXPORT DataPull := MODULE
                 OUTPUT(copyFilesDryRun, NAMED(actionLabel), ALL, EXTEND);
                 MAP
                     (
-                        ~isDryRun AND forceCompression  =>  NOTHOR(APPLY(copyFiles, Std.File.Copy(AbsPath(path), MappedCluster(sourceCluster), AbsPath(path), dali, allowoverwrite := TRUE, compress := TRUE))),
-                        ~isDryRun AND ~forceCompression =>  NOTHOR(APPLY(copyFiles, Std.File.Copy(AbsPath(path), MappedCluster(sourceCluster), AbsPath(path), dali, allowoverwrite := TRUE)))
+                        ~isDryRun AND forceCompression  =>  NOTHOR(APPLY(copyFiles, Std.File.Copy(AbsPath(path), MappedCluster(sourceCluster), AbsPath(path), dali, allowoverwrite := TRUE, compress := TRUE, noSplit := enableNoSplit))),
+                        ~isDryRun AND ~forceCompression =>  NOTHOR(APPLY(copyFiles, Std.File.Copy(AbsPath(path), MappedCluster(sourceCluster), AbsPath(path), dali, allowoverwrite := TRUE, noSplit := enableNoSplit)))
                     );
             );
 
@@ -1055,6 +1060,8 @@ DataPull.Go
         REMOTE_DALI,
         FILE_PATTERNS,
         clusterMap := clusters,
+        disableContentCheck := FALSE,
+        enableNoSplit := FALSE,
         isDryRun := TRUE
     );
 

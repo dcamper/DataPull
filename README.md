@@ -43,6 +43,7 @@ IMPORT statement will change slightly as well:  instead of
 |1.0.0|Initial public release|
 |1.0.1|Change SEQUENTIAL calls to ORDERED for performance (avoids subgraph duplication)|
 |1.1.0|Add disableContentCheck option|
+|1.2.0|Add enableNoSplit option|
 </details>
 
 ## Overview
@@ -120,6 +121,7 @@ DataPull.Go
 		FILE_PATTERNS,
 		clusterMap := clusters,
 		disableContentCheck := FALSE,
+		enableNoSplit := FALSE,
 		isDryRun := TRUE
 	);
 ```
