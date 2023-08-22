@@ -44,6 +44,7 @@ IMPORT statement will change slightly as well:  instead of
 |1.0.1|Change SEQUENTIAL calls to ORDERED for performance (avoids subgraph duplication)|
 |1.1.0|Add disableContentCheck option|
 |1.2.0|Add enableNoSplit option|
+|1.2.1|Avoid copying subfiles that already exist on the destination but are not yet attached to their superfiles|
 </details>
 
 ## Overview

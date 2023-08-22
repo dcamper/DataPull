@@ -447,16 +447,21 @@ EXPORT DataPull := MODULE
      *
      * @param   remoteFiles     Dataset containing remote file information
      * @param   localFiles      Dataset containing local file information
+     * @param   doublecheckAdd  If TRUE, perform a second check of the
+     *                          files that will be added to the local
+     *                          system to ensure they do not already exist;
+     *                          the check is by filename only, not contents;
+     *                          if FALSE, all such files will be copied
      *
      * @return  DATASET(FileActionRec) containing information that inform
      *          actions to be taken.
      *
      * @see     GenerateSuperFileActions
      */
-    SHARED GenerateFileActions(DATASET(FileInfoRec) remoteFiles, DATASET(FileInfoRec) localFiles) := FUNCTION
+    SHARED GenerateFileActions(DATASET(FileInfoRec) remoteFiles, DATASET(FileInfoRec) localFiles, BOOLEAN doublecheckAdd) := FUNCTION
         // Files and superfiles that exist only on the remote system; these
         // will be added to the local system
-        onlyRemote := JOIN
+        onlyRemote0 := JOIN
             (
                 remoteFiles,
                 localFiles,
@@ -470,6 +475,13 @@ EXPORT DataPull := MODULE
                         SELF.syncAction := SYNC_ACTION.ADD
                     ),
                 LEFT ONLY
+            );
+
+        onlyRemote := IF
+            (
+                doublecheckAdd,
+                onlyRemote0(isSuperFile OR (NOT Std.File.FileExists(AbsPath(path)))),
+                onlyRemote0
             );
 
         // Files and superfiles that exist only on the local system; these will
@@ -740,7 +752,7 @@ EXPORT DataPull := MODULE
     EXPORT CollectFileInfo(STRING dali, SET OF STRING patterns = DEFAULT_FILENAME_PATTERNS, BOOLEAN disableContentCheck = FALSE) := FUNCTION
         remoteResults := CollectFileInfoFromSystem(dali, patterns, disableContentCheck);
         localResults := CollectFileInfoFromSystem(Std.System.Thorlib.DaliServer(), patterns, disableContentCheck);
-        fileActionResults := GenerateFileActions(remoteResults.files, localResults.files);
+        fileActionResults := GenerateFileActions(remoteResults.files, localResults.files, disableContentCheck);
         fileActionSummaryStats := TABLE
             (
                 fileActionResults,
