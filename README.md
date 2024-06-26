@@ -45,6 +45,7 @@ IMPORT statement will change slightly as well:  instead of
 |1.1.0|Add disableContentCheck option|
 |1.2.0|Add enableNoSplit option|
 |1.2.1|Avoid copying subfiles that already exist on the destination but are not yet attached to their superfiles|
+|1.2.2|Add asOfDate support|
 </details>
 
 ## Overview
@@ -80,6 +81,12 @@ local system.  The most common example is probably 'thor' vs. 'mythor' --
 two common Thor cluster names that seem to pop up in simple configurations.
 The map indicates on which local cluster to put a new or modified file,
 file, given the name of the remote cluster.
+
+The optional asOfDate parameter, added in v1.2.2, provides a way to limit
+the files that DataPull examines.  If provided, files and superfiles modified
+prior to the date are ignored at both the remote and local clusters.
+asOfDate values can be in either YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS (note
+the T delimiter) format.  An empty asOfDate means there is no constraint.
 
 The code can be executed in "dry run" mode (which is the default).  In this
 mode, every action that would normally be taken is compiled into a list of
@@ -123,6 +130,7 @@ DataPull.Go
 		clusterMap := clusters,
 		disableContentCheck := FALSE,
 		enableNoSplit := FALSE,
-		isDryRun := TRUE
+		isDryRun := TRUE,
+        asOfDate := ''
 	);
 ```

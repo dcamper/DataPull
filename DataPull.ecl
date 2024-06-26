@@ -209,11 +209,21 @@ EXPORT DataPull := MODULE
      * @param   patterns                A set of filename patterns to match
      * @param   disableContentCheck     If TRUE do no collect format or
      *                                  content CRC values
+     * @param   asOfDate                A date or datetime representing a cutoff;
+     *                                  files modified prior to this value are
+     *                                  ignored at both the remote and local
+     *                                  clusters; use an empty string to denote
+     *                                  no limit on date; if provided, the format
+     *                                  must be either YYYY-MM-DD or
+     *                                  YYYY-MM-DDTHH:MM:SS (note the T delimiter)
      *
      * @return  A DATASET(FileInfoRec) containing the information.  Note that
      *          both files and superfiles are gathered.
      */
-    SHARED GetInfoForFilesMatchingPatterns(STRING dali, SET OF STRING patterns, BOOLEAN disableContentCheck) := FUNCTION
+    SHARED GetInfoForFilesMatchingPatterns(STRING dali,
+                                           SET OF STRING patterns,
+                                           BOOLEAN disableContentCheck,
+                                           STRING asOfDate) := FUNCTION
         // Gather files that match each given pattern; matched files will be
         // in a child recordset
         embeddedResults := PROJECT
@@ -239,11 +249,12 @@ EXPORT DataPull := MODULE
                     )
             );
 
-        // Flatten the results and append additional CRC information
+        // Filter out older results and flatten everything, then optionally
+        // append additional CRC information
         flatResults := NORMALIZE
             (
                 embeddedResults,
-                LEFT.infoList,
+                LEFT.infoList(modified = '' OR modified >= asOfDate),
                 TRANSFORM
                     (
                         FileInfoRec,
@@ -271,13 +282,23 @@ EXPORT DataPull := MODULE
      *                                  for files
      * @param   disableContentCheck     If TRUE do no collect format or
      *                                  content CRC values
+     * @param   asOfDate                A date or datetime representing a cutoff;
+     *                                  files modified prior to this value are
+     *                                  ignored at both the remote and local
+     *                                  clusters; use an empty string to denote
+     *                                  no limit on date; if provided, the format
+     *                                  must be either YYYY-MM-DD or
+     *                                  YYYY-MM-DDTHH:MM:SS (note the T delimiter)
      *
      * @return  A DATASET(FileInfoRec) containing the information.  Note that
      *          both files and superfiles are gathered.
      *
      * @see     GetInfoForFilesMatchingPatterns
      */
-    SHARED GetAllSubFiles(DATASET(FileInfoRec) fileInfoList, STRING dali, BOOLEAN disableContentCheck) := FUNCTION
+    SHARED GetAllSubFiles(DATASET(FileInfoRec) fileInfoList,
+                          STRING dali,
+                          BOOLEAN disableContentCheck,
+                          STRING asOfDate) := FUNCTION
         // Loop that gathers information on the immediate children of superfiles;
         // note that the ds argument will contain only superfiles
         GetImmediateChildren(DATASET(SuperfileRelationshipRec) ds, UNSIGNED2 c) := FUNCTION
@@ -338,7 +359,7 @@ EXPORT DataPull := MODULE
                     TRANSFORM
                         (
                             SubFileInfoRec,
-                            SELF.subFileInfo := GetInfoForFilesMatchingPatterns(dali, [LEFT.name], disableContentCheck),
+                            SELF.subFileInfo := GetInfoForFilesMatchingPatterns(dali, [LEFT.name], disableContentCheck, asOfDate),
                             SELF := LEFT
                         )
                 );
@@ -403,15 +424,25 @@ EXPORT DataPull := MODULE
      * @param   patterns                A set of filename patterns to match
      * @param   disableContentCheck     If TRUE do no collect format or
      *                                  content CRC values
+     * @param   asOfDate                A date or datetime representing a cutoff;
+     *                                  files modified prior to this value are
+     *                                  ignored at both the remote and local
+     *                                  clusters; use an empty string to denote
+     *                                  no limit on date; if provided, the format
+     *                                  must be either YYYY-MM-DD or
+     *                                  YYYY-MM-DDTHH:MM:SS (note the T delimiter)
      *
      * @return  A MODULE containing file and superfile information
      *          within a DATASET(FileInfoRec) dataset, as well as
      *          superfile/subfile relationship data in a
      *          DATASET(SuperfileRelationshipRec) dataset.
      */
-    SHARED CollectFileInfoFromSystem(STRING dali, SET OF STRING patterns, BOOLEAN disableContentCheck) := FUNCTION
-        initialPatternResult := GetInfoForFilesMatchingPatterns(dali, patterns, disableContentCheck);
-        superSubResult := GetAllSubFiles(initialPatternResult, dali, disableContentCheck) : INDEPENDENT;
+    SHARED CollectFileInfoFromSystem(STRING dali,
+                                     SET OF STRING patterns,
+                                     BOOLEAN disableContentCheck,
+                                     STRING asOfDate) := FUNCTION
+        initialPatternResult := GetInfoForFilesMatchingPatterns(dali, patterns, disableContentCheck, asOfDate);
+        superSubResult := GetAllSubFiles(initialPatternResult, dali, disableContentCheck, asOfDate) : INDEPENDENT;
 
         // We need to add file information for files found while gathering
         // subfiles but were not included in the initial pattern match
@@ -428,7 +459,7 @@ EXPORT DataPull := MODULE
                 LEFT ONLY
             );
         unreportedNameSet := NOTHOR(SET(unreportedSubFileNames, subFilePath));
-        unreportedSubFileInfo := GetInfoForFilesMatchingPatterns(dali, unreportedNameSet, disableContentCheck);
+        unreportedSubFileInfo := GetInfoForFilesMatchingPatterns(dali, unreportedNameSet, disableContentCheck, asOfDate);
 
         // Concatenate the additional files with the initial pattern result
         allFileInfo := initialPatternResult + unreportedSubFileInfo : INDEPENDENT;
@@ -719,6 +750,14 @@ EXPORT DataPull := MODULE
      *                              files that have been overwritten with new
      *                              contents may not be copied; OPTIONAL,
      *                              defaults to FALSE
+     * @param   asOfDate            A date or datetime representing a cutoff;
+     *                              files modified prior to this value are
+     *                              ignored at both the remote and local
+     *                              clusters; use an empty string to denote
+     *                              no limit on date; if provided, the format
+     *                              must be either YYYY-MM-DD or
+     *                              YYYY-MM-DDTHH:MM:SS (note the T delimiter);
+     *                              OPTIONAL, defaults to an empty string
      *
      * @return  MODULE containing multiple attributes:
      *              engine                          The HPCC engine that is
@@ -749,9 +788,12 @@ EXPORT DataPull := MODULE
      *
      * @see     Go
      */
-    EXPORT CollectFileInfo(STRING dali, SET OF STRING patterns = DEFAULT_FILENAME_PATTERNS, BOOLEAN disableContentCheck = FALSE) := FUNCTION
-        remoteResults := CollectFileInfoFromSystem(dali, patterns, disableContentCheck);
-        localResults := CollectFileInfoFromSystem(Std.System.Thorlib.DaliServer(), patterns, disableContentCheck);
+    EXPORT CollectFileInfo(STRING dali,
+                           SET OF STRING patterns = DEFAULT_FILENAME_PATTERNS,
+                           BOOLEAN disableContentCheck = FALSE,
+                           STRING asOfDate = '') := FUNCTION
+        remoteResults := CollectFileInfoFromSystem(dali, patterns, disableContentCheck, asOfDate);
+        localResults := CollectFileInfoFromSystem(Std.System.Thorlib.DaliServer(), patterns, disableContentCheck, asOfDate);
         fileActionResults := GenerateFileActions(remoteResults.files, localResults.files, disableContentCheck);
         fileActionSummaryStats := TABLE
             (
@@ -869,6 +911,14 @@ EXPORT DataPull := MODULE
      * @param   debugOutput         If TRUE, emit datasets representing the
      *                              internal state of the collection and
      *                              analysis; OPTIONAL, defaults to FALSE
+     * @param   asOfDate            A date or datetime representing a cutoff;
+     *                              files modified prior to this value are
+     *                              ignored at both the remote and local
+     *                              clusters; use an empty string to denote
+     *                              no limit on date; if provided, the format
+     *                              must be either YYYY-MM-DD or
+     *                              YYYY-MM-DDTHH:MM:SS (note the T delimiter);
+     *                              OPTIONAL, defaults to an empty string
      *
      * @return  An action that performs the analysis and, if isDryRun is TRUE,
      *          also performs the actions required to bring the data into sync
@@ -882,7 +932,8 @@ EXPORT DataPull := MODULE
               BOOLEAN disableContentCheck = FALSE,
               BOOLEAN enableNoSplit = FALSE,
               BOOLEAN isDryRun = TRUE,
-              BOOLEAN debugOutput = FALSE) := FUNCTION
+              BOOLEAN debugOutput = FALSE,
+              STRING asOfDate = '') := FUNCTION
 
         clusterMapDict := DICTIONARY(clusterMap, {remoteCluster => localCluster});
         MappedCluster(STRING clusterName) := FUNCTION
@@ -897,7 +948,10 @@ EXPORT DataPull := MODULE
         actionCountLabel := IF(isDryRun, 'DryRun', '') + 'ActionCount';
         actionLabel := IF(isDryRun, 'DryRun', '') + 'Actions';
 
-        info := CollectFileInfo(dali, patterns, disableContentCheck);
+        // Make sure asOfDate is correctly formatted
+        validatedAsOfDate := IF(asOfDate = '' OR REGEXFIND('^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}:\\d{2})?$', asOfDate), asOfDate, ERROR('asOfDate incorrectly formatted'));
+
+        info := CollectFileInfo(dali, patterns, disableContentCheck, validatedAsOfDate);
 
         // Remove local superfile relations
         removeLocalSuperFileRelations := GLOBAL(info.superFileActions(syncAction = SYNC_ACTION.DELETE_FILE), FEW);
@@ -1015,6 +1069,7 @@ EXPORT DataPull := MODULE
         allActions := ORDERED
             (
                 OUTPUT(isDryRun, NAMED('WasDryRun'));
+                OUTPUT(IF(asOfDate = '', '<any>', asOfDate), NAMED('AsOfDate'));
                 IF  (
                         debugOutput,
                         ORDERED
@@ -1074,7 +1129,8 @@ DataPull.Go
         clusterMap := clusters,
         disableContentCheck := FALSE,
         enableNoSplit := FALSE,
-        isDryRun := TRUE
+        isDryRun := TRUE,
+        asOfDate := ''
     );
 
 *******************************************************************************/
